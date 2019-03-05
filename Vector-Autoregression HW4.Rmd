@@ -1,0 +1,169 @@
+---
+title: "Vector-Autoregression HW4"
+author: "Austin Lee"
+date: "February 26, 2019"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r libraries}
+library(readxl)
+library(vars)
+library('tseries')
+library(forecast)
+
+```
+##Problem 1: VAR modeling
+
+```{r Part1}
+data<-read_excel("Copy of Chapter11_exercises_data.xls", sheet = "Exercise 1 - 10")
+MSA1 <- (ts(data$GSJ[1:120], start = 1975, frequency = 4))
+MSA2 <- (ts(data$GSF[1:120], start = 1975, frequency = 4))
+
+MSA1o <- as.numeric(ts(data$GSJ[1:120], start = 1975, frequency = 4))#San Jose
+MSA2o <- as.numeric(ts(data$GSF[1:120], start = 1975, frequency = 4))#San Francisco
+
+plot(MSA1)
+plot(MSA2)
+```
+
+The plots of these two time series are very similar. In general, it appears there are larger amptitudes for the San Francisco time series.
+
+```{r Part1Var}
+comboMSA= (na.remove(cbind(MSA1o,MSA2o)))
+tot_comboMSA = data.frame(comboMSA)
+VARselect(tot_comboMSA)
+```
+
+From our Varselect, we can see that the best model according to AIC, BIC, HQ, and FPE is at lag, p = 3. 
+
+```{r Part1Varmod}
+var_model<-VAR(tot_comboMSA, p = 3)
+summary(var_model)
+```
+
+According to our var model, it appears as though we have many statistically insignificant coefficients when predicting price growth for San Jose and San Francisco. When predicting price growth in San Francisco and San Jose, we determine that good predictors of growth include lags for previous growth for San Jose at 1 and 2 and San Francisco growth at lag 3. The two models have similar R^2 adjusted values of around .62.
+
+##Problem 2: Granger Casuality
+
+```{r part2}
+grangertest(MSA1o~MSA2o, order = 3)
+grangertest(MSA2o~MSA1o, order = 3)
+
+```
+
+The Granger casuality test tests whether there is predictive casuality between the two sets of time series. At lag 3, we look whether either San Jose price growth may have some predictive casuality with San Francisco and vice Versa. After running the test, we see that we would reject the null hypothesis for both at the 5% level, indicating that there is casuality between predicting San Jose price growth with San Francisco and vice versa. Since they are both statistically significant, the granger casuality test itself is inconclusive. 
+
+##Problem 3: Impulse Response Functions
+
+```{r part3}
+plot(irf(var_model))
+
+```
+
+When looking at the Impluse Response Function for our Var model, we see that  predictive powers of price growth in San Jose has a large impact on San Jose(larger amplitude) and San Francisco prices at lag 1, which begins to decay from that point on. This would mean that recent increases or decreases in price growth are a better predictor of future price growth in San Jose. When looking at the predictive powers of price growth in San Francisco, we see that it has little impact for San Jose initially but reverts, with small amplitude, a few times above and below 0. When looking at San Francisco price growth with lagged San Francisco price growth, there is immediate casual relationship at lag 1, which begins to decline from that point on.
+
+##Problem 4: VAR VS ARIMA VS Actual Observations
+
+```{r Part4}
+predict(var_model, n.ahead=1)
+
+print(paste("Real observations for MSA1:", data$GSJ[121]))
+print(paste("Real observations for MSA2:", data$GSF[121]))
+
+auto.arima(MSA1o)#best one is ARIMA(1,0,2)
+auto.arima(MSA2o)#best one is ARIMA(2,1,2)
+
+MSA1_ARIMA_mod <- arima(MSA1o, order = c(1,0,2))
+MSA2_ARIMA_mod <- arima(MSA2o, order = c(2,1,2))
+
+predict_MSA1_ARIMA_mod1 <- predict(MSA1_ARIMA_mod, n.ahead = 1)
+predict_MSA2_ARIMA_mod2 <- predict(MSA2_ARIMA_mod, n.ahead =1)
+
+print(paste("Prediction using ARIMA for MSA1:", predict_MSA1_ARIMA_mod1[1]))
+print(paste("Upper bound of ARIMA for MSA1:", 
+            as.numeric(predict_MSA1_ARIMA_mod1[1])+
+              as.numeric(predict_MSA1_ARIMA_mod1[2])*1.96))
+print(paste("Lower bound of ARIMA for MSA1:", 
+            as.numeric(predict_MSA1_ARIMA_mod1[1])-
+              as.numeric(predict_MSA1_ARIMA_mod1[2])*1.96))
+
+print(paste("Prediction using ARIMA for MSA2:", predict_MSA2_ARIMA_mod2[1]))
+print(paste("Upper bound of ARIMA for MSA2:",
+            as.numeric(predict_MSA2_ARIMA_mod2[1])+
+              as.numeric(predict_MSA2_ARIMA_mod2[2])*1.96))
+print(paste("Lower bound of ARIMA for MSA2:", 
+            as.numeric(predict_MSA2_ARIMA_mod2[1])-
+              as.numeric(predict_MSA2_ARIMA_mod2[2])*1.96))
+```
+
+For our given prediction and confidence interval, we are within the levels of real price growth for San Jose and San Francisco. For San Jose, our forecast was a 3.87% price growth with an upper bound of 6.68% and lower bound of .989 for Q1 2005 ; the real price growth was 3.2182%. For San Francisco, our forecast was 4.79% with a lower bound 1.74% and upper bound of 7.86%; the real price growth was 5.64%. Using the univariate ARIMA model, our prediction for San Jose was 3.04%, with the actual observation for San Jose at 3.21%, which is within their confidence interval at the 5% level. Using the univariate ARIMA model, the prediction for San Francisco was 3.79% with the actual value lying between its confidence interval as well. Both models did a decent job of predicting 1 step ahead. 
+
+
+##Problem 5: Predicing 10 steps out
+
+```{r Part5}
+library('tseries')
+
+plot(predict(var_model, n.ahead=10), xlim= c(120,129))
+plot((na.remove(ts(data$GSJ[121:130]))), col = 'red')
+plot((na.remove(ts(data$GSF[121:130]))), col = 'red')
+
+predict(var_model,n.ahead=10)
+for (i in (1:10)){
+  print(paste("San Jose Actual:",data$GSJ[i+120]))
+}
+
+for (i in (1:10)){
+  print(paste("San Francisco Actual:",data$GSF[i+120]))
+}
+
+```
+
+When looking at a multistep forecast, compared to the actual observed data, we can see that the two first initial steps do a good job of capturing the overall data. However, it does not capture the data afterwards. The actual data is well within the confidence interval, but the predicted points are staying constant at around the overall mean; this is due to the properties of multiforecasting. 
+
+```{r part5cont}
+MSA3o <- as.numeric(ts(data$GAL[1:120], start = 1975, freq = 4))
+
+```
+
+Using the same excel file, we look at the pricing growth rates of Albany-Schenectady-Troy metropolitan areas. In problem 6, we will do the same VAR and Granger casuality analysis with the San Jose pricing growth data. 
+
+##Problem 6: GAL and GSJ
+
+```{r part6}
+combo_GAL_GSJ <- data.frame(na.remove(cbind(MSA1o, MSA3o)))
+VARselect((combo_GAL_GSJ))
+
+```
+
+After combining both sets of data into a data frame and performing the VARselect function, there is a difference in the optimial model chosen by AIC, BIC, and FPE. Since AIC tends to over parameterize, we will choose BIC's optimal model and use a lag of 1 instead. 
+
+
+```{r part6cont}
+
+VAR_model_GAL_GSJ<- VAR(combo_GAL_GSJ,p=1)
+summary(VAR_model_GAL_GSJ)
+
+
+```
+
+When looking at the lagged coefficients predicting GAL(Albany), the only coefficient that is statistically significant is a lagged coefficient from GAL. It would appear that GSJ does not granger cause GAL, but further investigation is necessary. The same is true for the predictors predicting GSJ; the GSJ lagged coefficient is statistically signficant but not for GAL.  
+
+```{r part6cont2}
+grangertest(MSA1o~MSA3o, order = 3)
+grangertest(MSA3o~MSA1o, order = 3)
+
+plot(irf(VAR_model_GAL_GSJ))
+
+```
+
+When performing the granger casuality test, our predictions from before were correct. Neither of the lagged time series has lagged serial correlation with each other from looking at the P-Values of both tests.
+
+In conclusion, we should not use the VAR model to predict either time series because neither granger cause each other, meaning there is no predictive power using this model.
